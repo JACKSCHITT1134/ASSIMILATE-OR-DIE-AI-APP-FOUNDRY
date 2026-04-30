@@ -68,9 +68,21 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate("/legal")}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:block"
             >
               Legal
+            </button>
+            <button
+              onClick={() => navigate("/pricing")}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Pricing
+            </button>
+            <button
+              onClick={() => navigate("/auth")}
+              className="px-4 py-2 rounded-lg border border-border bg-secondary/50 text-foreground text-sm font-medium hover:border-primary/40 transition-all duration-200"
+            >
+              Sign In
             </button>
             <button
               onClick={() => navigate("/command")}
@@ -105,17 +117,17 @@ export default function LandingPage() {
           {/* CTA */}
           <div className="flex flex-col sm:flex-row gap-4 mb-16">
             <button
-              onClick={() => navigate("/command")}
+              onClick={() => navigate("/auth")}
               className="px-8 py-4 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:opacity-90 transition-all duration-200 glow-cyan"
               style={{ minWidth: "200px" }}
             >
               ⚡ Start Building
             </button>
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/pricing")}
               className="px-8 py-4 rounded-xl border border-border bg-secondary/50 text-foreground font-medium text-base hover:border-primary/40 hover:bg-primary/5 transition-all duration-200"
             >
-              View Dashboard
+              View Pricing
             </button>
           </div>
 
