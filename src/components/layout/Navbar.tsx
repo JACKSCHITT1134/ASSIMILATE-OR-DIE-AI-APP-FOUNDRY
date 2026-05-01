@@ -6,6 +6,7 @@ import openclawAvatar from "@/assets/openclaw-avatar.png";
 const NAV_LINKS = [
   { href: "/command", label: "Command", icon: "⚡" },
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/assimilate", label: "Swarm", icon: "💀" },
   { href: "/pricing", label: "Pricing", icon: "💳" },
   { href: "/buyout", label: "Buyout", icon: "💰" },
   { href: "/legal", label: "Legal", icon: "⚖️" },
@@ -22,6 +23,8 @@ export default function Navbar() {
   };
 
   const isAdmin = user?.email?.includes("admin");
+
+  // Account link replaces generic Sign In when logged in
 
   return (
     <nav className="sticky top-0 z-50 glass-panel border-b border-border/60">
@@ -82,6 +85,17 @@ export default function Navbar() {
                 <span className="w-2 h-2 rounded-full bg-green-500 pulse-dot" />
                 <span className="max-w-[100px] truncate">{user.username}</span>
               </div>
+              <Link
+                to="/account"
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
+                  location.pathname === "/account"
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "text-muted-foreground hover:text-foreground border-transparent hover:border-border hover:bg-secondary"
+                )}
+              >
+                Account
+              </Link>
               <button
                 onClick={handleLogout}
                 className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-all border border-transparent hover:border-border"

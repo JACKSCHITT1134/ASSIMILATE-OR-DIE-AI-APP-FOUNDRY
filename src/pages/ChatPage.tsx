@@ -1,22 +1,44 @@
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import { useAppStore } from "@/stores/appStore";
 import ChatMessage from "@/components/features/ChatMessage";
 import AgentStatusBar from "@/components/features/AgentStatusBar";
 import SelfImprovementPanel from "@/components/features/SelfImprovementPanel";
-import { openClawRespond, buildMessage, detectNewCapability } from "@/lib/openclaw";
+import { buildMessage, detectNewCapability } from "@/lib/openclaw";
 import type { AgentName, AgentStatus } from "@/types";
-import { generateId } from "@/lib/utils";
 import { PRIME_DIRECTIVE } from "@/constants";
 import openclawAvatar from "@/assets/openclaw-avatar.png";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 
 const QUICK_PROMPTS = [
-  "I want to build a subscription app",
+  "I want to build a subscription SaaS app",
   "Build me a marketplace for freelancers",
   "Create an AI-powered fitness tracker",
-  "Make a SaaS tool for small businesses",
+  "Make a zero-budget app that makes money",
   "Who are you and what's the Prime Directive?",
+  "What is the Assimilate or Die protocol?",
 ];
+
+// Detect the active agent from the AI's response content
+function detectAgentFromResponse(content: string): AgentName {
+  const lower = content.toLowerCase();
+  if (lower.includes("architect") || lower.includes("blueprint") || lower.includes("schema") || lower.includes("database")) return "architect";
+  if (lower.includes("deploy") || lower.includes("domain") || lower.includes("ssl") || lower.includes("app store") || lower.includes("devops")) return "devops";
+  if (lower.includes("marketer") || lower.includes("seo") || lower.includes("aso") || lower.includes("campaign") || lower.includes("ad creative")) return "marketer";
+  if (lower.includes("legal") || lower.includes("terms of service") || lower.includes("privacy policy") || lower.includes("compliance")) return "legal";
+  if (lower.includes("billing") || lower.includes("stripe") || lower.includes("revenue share") || lower.includes("buyout")) return "billing";
+  if (lower.includes("developer") || lower.includes("react") || lower.includes("code") || lower.includes("function")) return "developer";
+  return "openclaw";
+}
+
+// Convert store messages to OpenAI format for the API
+function messagesToApiFormat(messages: ReturnType<typeof useAppStore>["messages"]) {
+  return messages.slice(-12).map((m) => ({
+    role: m.role === "user" ? "user" : "assistant",
+    content: m.content,
+  }));
+}
 
 export default function ChatPage() {
   const store = useAppStore();
@@ -39,14 +61,14 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [store.messages]);
+  }, [store.messages, isThinking]);
 
   const setAgentStatus = (agent: AgentName, status: AgentStatus) => {
     setAgentStatuses((prev) => ({ ...prev, [agent]: status }));
   };
 
   const triggerOpenClaw = async (userText: string, isGreeting = false) => {
-    if (!isGreeting) {
+    if (!isGreeting && userText.trim()) {
       const userMsg = buildMessage("user", userText);
       store.addMessage(userMsg);
     }
@@ -55,40 +77,80 @@ export default function ChatPage() {
     setActiveAgent("openclaw");
     setAgentStatus("openclaw", "thinking");
 
-    const cap = detectNewCapability(userText);
-    if (cap) {
-      store.addModule({ name: cap.module, description: cap.description, status: "integrating" });
-      setTimeout(() => {
-        store.addModule({ name: cap.module, description: cap.description, status: "active" });
-      }, 3000);
+    // Detect self-improvement capabilities
+    if (userText) {
+      const cap = detectNewCapability(userText);
+      if (cap) {
+        store.addModule({ name: cap.module, description: cap.description, status: "integrating" });
+        setTimeout(() => {
+          store.addModule({ name: cap.module, description: cap.description, status: "active" });
+        }, 3000);
+      }
+
+      store.setAppIdea(userText);
     }
 
     try {
-      const response = await openClawRespond(userText, store.phase, store.appIdea);
+      // Build messages for the AI — include conversation history
+      const historyMessages = messagesToApiFormat(store.messages);
 
-      if (!isGreeting) {
-        store.setAppIdea(userText);
+      // For greeting, send a greeting prompt
+      const messagesForApi = isGreeting
+        ? [{ role: "user", content: "Greet me as OpenClaw Prime. Give the opening onboarding message." }]
+        : [...historyMessages, { role: "user", content: userText }];
+
+      console.log("[ChatPage] Calling openclaw-ai edge function, messages:", messagesForApi.length);
+
+      const { data, error } = await supabase.functions.invoke("openclaw-ai", {
+        body: {
+          messages: messagesForApi,
+          phase: store.phase,
+          appIdea: store.appIdea,
+          stream: false,
+        },
+      });
+
+      let content = "";
+      if (error) {
+        let msg = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const text = await error.context?.text();
+            msg = text || msg;
+          } catch {}
+        }
+        console.error("[ChatPage] Edge function error:", msg);
+        // Fallback response
+        content = `I'm having trouble connecting to my core systems right now. The Prime Directive is still active — I'll find a way. Give me a moment and try again.\n\n*(Error: ${msg})*`;
+      } else {
+        content = data?.content || "Processing your request. Stand by.";
       }
 
-      if (response.nextPhase) {
-        store.setPhase(response.nextPhase);
-      }
-
-      const agentId = response.agentId ?? "openclaw";
+      // Detect which agent is responding
+      const agentId = detectAgentFromResponse(content);
       setActiveAgent(agentId);
       setAgentStatus("openclaw", "done");
       setAgentStatus(agentId, "working");
 
-      const aiMsg = buildMessage("openclaw", response.content, agentId);
+      // Advance phase based on content keywords
+      if (store.phase === "greeting" && !isGreeting) {
+        store.setPhase("idea");
+      } else if (store.phase === "idea" && content.toLowerCase().includes("regular") && content.toLowerCase().includes("pro")) {
+        store.setPhase("payment");
+      } else if (store.phase === "payment" && (content.toLowerCase().includes("domain") || content.toLowerCase().includes("stripe"))) {
+        store.setPhase("logistics");
+      }
+
+      const aiMsg = buildMessage("openclaw", content, agentId);
       store.addMessage(aiMsg);
 
       setTimeout(() => {
         setAgentStatus(agentId, "done");
         setIsThinking(false);
-      }, 800);
+      }, 600);
     } catch (err) {
       console.error("[ChatPage] OpenClaw error:", err);
-      toast.error("OpenClaw encountered an error. Retrying...");
+      toast.error("OpenClaw encountered an error.");
       setIsThinking(false);
       setAgentStatus("openclaw", "error");
     }
@@ -128,7 +190,7 @@ export default function ChatPage() {
               <div>
                 <div className="text-xl font-bold gradient-text mb-2">OpenClaw Prime</div>
                 <div className="text-muted-foreground text-sm max-w-sm">
-                  Zero-knowledge. Full autonomy. Tell me your idea and I'll build the business.
+                  Real AI. Zero-knowledge. Full autonomy. Tell me your idea and I'll build the business.
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 justify-center max-w-lg">
@@ -151,9 +213,15 @@ export default function ChatPage() {
 
           {isThinking && (
             <div className="flex gap-3 px-4 py-4">
-              <img src={openclawAvatar} alt="OpenClaw" className="w-8 h-8 rounded-full border border-primary/40 flex-shrink-0 mt-1" />
+              <img
+                src={openclawAvatar}
+                alt="OpenClaw"
+                className="w-8 h-8 rounded-full border border-primary/40 flex-shrink-0 mt-1"
+              />
               <div className="glass-panel rounded-xl rounded-tl-sm px-4 py-3">
-                <div className="text-xs font-mono text-primary mb-2 uppercase tracking-wider">OpenClaw Prime</div>
+                <div className="text-xs font-mono text-primary mb-2 uppercase tracking-wider">
+                  OpenClaw Prime · Real AI
+                </div>
                 <div className="flex gap-1.5 items-center">
                   {[0, 1, 2].map((i) => (
                     <div
@@ -162,7 +230,9 @@ export default function ChatPage() {
                       style={{ animation: `pulse-glow 1.2s ease-in-out infinite ${i * 0.2}s` }}
                     />
                   ))}
-                  <span className="text-xs text-muted-foreground ml-2 font-mono">Processing...</span>
+                  <span className="text-xs text-muted-foreground ml-2 font-mono">
+                    Thinking...
+                  </span>
                 </div>
               </div>
             </div>
@@ -209,7 +279,7 @@ export default function ChatPage() {
               </div>
             </div>
             <div className="text-xs text-muted-foreground/50 text-center mt-2 font-mono">
-              Enter to send · Shift+Enter for new line · Prime Directive active
+              Enter to send · Shift+Enter for new line · Real AI powered by OnSpace AI
             </div>
           </div>
         </div>
@@ -217,6 +287,15 @@ export default function ChatPage() {
 
       {/* ── Right Sidebar ── */}
       <div className="hidden lg:flex flex-col w-72 border-l border-border overflow-y-auto p-4 gap-4">
+        {/* AI Status */}
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20">
+          <span className="w-2 h-2 rounded-full bg-green-400 pulse-dot flex-shrink-0" />
+          <div>
+            <div className="text-xs font-mono text-primary">Real AI Active</div>
+            <div className="text-xs text-muted-foreground">Gemini 3 Flash · OnSpace AI</div>
+          </div>
+        </div>
+
         {/* Prime Directive toggle */}
         <div>
           <button
@@ -252,7 +331,9 @@ export default function ChatPage() {
             </div>
             <div className="flex justify-between">
               <span>Modules</span>
-              <span className="text-foreground">{store.modules.filter(m => m.status === "active").length} active</span>
+              <span className="text-foreground">
+                {store.modules.filter((m) => m.status === "active").length} active
+              </span>
             </div>
           </div>
         </div>

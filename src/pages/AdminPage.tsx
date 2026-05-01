@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 
 interface Plan {
   id: string;
@@ -19,13 +20,22 @@ interface Plan {
   sort_order: number;
 }
 
-// Admin emails — extend this list to grant access
-const ADMIN_EMAILS = ["admin@colossalai.app", "owner@colossalai.app"];
+// Check admin status from DB config OR email
+async function checkAdminStatus(email: string): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from("admin_config")
+      .select("value")
+      .eq("key", "admin_emails")
+      .single();
 
-function isAdmin(email?: string) {
-  if (!email) return false;
-  // Allow any email containing "admin" or matching the list for demo purposes
-  return ADMIN_EMAILS.includes(email) || email.includes("admin");
+    if (data?.value) {
+      const adminEmails = data.value.split(",").map((e: string) => e.trim().toLowerCase());
+      if (adminEmails.includes(email.toLowerCase())) return true;
+    }
+  } catch {}
+  // Fallback: email includes "admin"
+  return email.toLowerCase().includes("admin");
 }
 
 export default function AdminPage() {
@@ -36,17 +46,33 @@ export default function AdminPage() {
   const [editDraft, setEditDraft] = useState<Partial<Plan>>({});
   const [saving, setSaving] = useState(false);
   const [loadingPlans, setLoadingPlans] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
+
+  // Admin email config state
+  const [adminEmails, setAdminEmails] = useState("");
+  const [editingAdminEmails, setEditingAdminEmails] = useState(false);
+  const [savingAdminEmails, setSavingAdminEmails] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
-    if (!authLoading && user && !isAdmin(user.email)) {
-      toast.error("Admin access required.");
-      navigate("/dashboard");
-    }
   }, [user, authLoading]);
 
   useEffect(() => {
+    if (!user) return;
+    checkAdminStatus(user.email).then((admin) => {
+      setIsAdmin(admin);
+      setCheckingAdmin(false);
+      if (!admin) {
+        toast.error("Admin access required.");
+        navigate("/dashboard");
+      }
+    });
+  }, [user]);
+
+  useEffect(() => {
     fetchPlans();
+    fetchAdminEmails();
   }, []);
 
   const fetchPlans = async () => {
@@ -63,6 +89,30 @@ export default function AdminPage() {
     setLoadingPlans(false);
   };
 
+  const fetchAdminEmails = async () => {
+    const { data } = await supabase
+      .from("admin_config")
+      .select("value")
+      .eq("key", "admin_emails")
+      .single();
+    if (data?.value) setAdminEmails(data.value);
+  };
+
+  const saveAdminEmails = async () => {
+    setSavingAdminEmails(true);
+    const { error } = await supabase
+      .from("admin_config")
+      .upsert({ key: "admin_emails", value: adminEmails, updated_at: new Date().toISOString() }, { onConflict: "key" });
+
+    if (error) {
+      toast.error("Failed to save admin emails: " + error.message);
+    } else {
+      toast.success("Admin emails updated. Changes take effect on next login.");
+      setEditingAdminEmails(false);
+    }
+    setSavingAdminEmails(false);
+  };
+
   const startEdit = (plan: Plan) => {
     setEditingId(plan.id);
     setEditDraft({ ...plan });
@@ -76,9 +126,8 @@ export default function AdminPage() {
   const savePlan = async () => {
     if (!editingId || !editDraft) return;
     setSaving(true);
-    console.log("[Admin] Saving plan via edge function:", editingId, editDraft);
+    console.log("[Admin] Saving plan:", editingId, editDraft);
 
-    // Parse features from textarea string if needed
     let features = editDraft.features;
     if (typeof features === "string") {
       features = (features as unknown as string)
@@ -104,7 +153,6 @@ export default function AdminPage() {
     });
 
     if (error) {
-      const { FunctionsHttpError } = await import("@supabase/supabase-js");
       let msg = error.message;
       if (error instanceof FunctionsHttpError) {
         try {
@@ -116,20 +164,22 @@ export default function AdminPage() {
       console.error("[Admin] save error:", msg);
     } else {
       console.log("[Admin] Plan saved:", data);
-      toast.success("Plan updated successfully.");
+      toast.success("Plan updated.");
       await fetchPlans();
       cancelEdit();
     }
     setSaving(false);
   };
 
-  if (authLoading || loadingPlans) {
+  if (authLoading || checkingAdmin || loadingPlans) {
     return (
       <div className="min-h-screen bg-background grid-bg flex items-center justify-center">
         <div className="text-muted-foreground font-mono animate-pulse">Loading admin panel...</div>
       </div>
     );
   }
+
+  if (!isAdmin) return null;
 
   return (
     <div className="min-h-screen bg-background grid-bg">
@@ -139,7 +189,7 @@ export default function AdminPage() {
           <div>
             <h1 className="text-2xl font-bold gradient-text">Admin Panel</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Edit pricing, subscriptions, and plan features.
+              Edit pricing, subscriptions, plan features, and admin access.
             </p>
           </div>
           <button
@@ -150,7 +200,61 @@ export default function AdminPage() {
           </button>
         </div>
 
-        {/* Plans */}
+        {/* ── Admin Email Config ── */}
+        <div className="glass-panel rounded-2xl p-6 border border-border/60 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="font-semibold text-foreground">🔐 Admin Access Control</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Comma-separated list of email addresses with admin access.
+              </p>
+            </div>
+            {!editingAdminEmails ? (
+              <button
+                onClick={() => setEditingAdminEmails(true)}
+                className="px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+              >
+                Edit
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditingAdminEmails(false)}
+                  className="px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs text-muted-foreground hover:text-foreground transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveAdminEmails}
+                  disabled={savingAdminEmails}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  {savingAdminEmails ? "Saving..." : "Save"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {editingAdminEmails ? (
+            <textarea
+              value={adminEmails}
+              onChange={(e) => setAdminEmails(e.target.value)}
+              rows={3}
+              placeholder="admin@yourdomain.com, owner@yourdomain.com"
+              className="w-full bg-secondary border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none font-mono transition-colors"
+            />
+          ) : (
+            <div className="bg-secondary/50 rounded-xl px-4 py-3 font-mono text-sm text-muted-foreground">
+              {adminEmails || "No admin emails configured"}
+            </div>
+          )}
+
+          <div className="mt-3 text-xs text-muted-foreground/60">
+            Current admin: <span className="text-primary font-mono">{user?.email}</span>
+          </div>
+        </div>
+
+        {/* ── Subscription Plans ── */}
         <div className="space-y-4">
           <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">
             Subscription Plans
@@ -165,7 +269,6 @@ export default function AdminPage() {
                 key={plan.id}
                 className="glass-panel rounded-2xl border border-border/60 overflow-hidden"
               >
-                {/* Plan header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border/40">
                   <div className="flex items-center gap-3">
                     <span
@@ -186,7 +289,7 @@ export default function AdminPage() {
                       <>
                         <button
                           onClick={cancelEdit}
-                          className="px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-all"
+                          className="px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs text-muted-foreground hover:text-foreground transition-all"
                         >
                           Cancel
                         </button>
@@ -202,17 +305,13 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Fields */}
                 <div className="px-6 py-5 grid sm:grid-cols-2 gap-5">
-                  {/* Name */}
                   <Field
                     label="Plan Name"
                     editing={isEditing}
                     value={String(d.name ?? "")}
                     onChange={(v) => setEditDraft((prev) => ({ ...prev, name: v }))}
                   />
-
-                  {/* Price */}
                   <Field
                     label="Price (USD)"
                     editing={isEditing}
@@ -221,8 +320,6 @@ export default function AdminPage() {
                     prefix="$"
                     onChange={(v) => setEditDraft((prev) => ({ ...prev, price: parseFloat(v) || 0 }))}
                   />
-
-                  {/* Rev share year 1 */}
                   <Field
                     label="Revenue Share — Year 1 (%)"
                     editing={isEditing}
@@ -233,8 +330,6 @@ export default function AdminPage() {
                       setEditDraft((prev) => ({ ...prev, rev_share_year1: (parseFloat(v) || 0) / 100 }))
                     }
                   />
-
-                  {/* Rev share lifetime */}
                   <Field
                     label="Revenue Share — Lifetime (%)"
                     editing={isEditing}
@@ -245,8 +340,6 @@ export default function AdminPage() {
                       setEditDraft((prev) => ({ ...prev, rev_share_lifetime: (parseFloat(v) || 0) / 100 }))
                     }
                   />
-
-                  {/* Stripe price ID */}
                   <Field
                     label="Stripe Price ID"
                     editing={isEditing}
@@ -254,8 +347,6 @@ export default function AdminPage() {
                     placeholder="price_xxx..."
                     onChange={(v) => setEditDraft((prev) => ({ ...prev, stripe_price_id: v }))}
                   />
-
-                  {/* Sort order */}
                   <Field
                     label="Sort Order"
                     editing={isEditing}
@@ -264,16 +355,13 @@ export default function AdminPage() {
                     onChange={(v) => setEditDraft((prev) => ({ ...prev, sort_order: parseInt(v) || 0 }))}
                   />
 
-                  {/* Active toggle */}
                   <div className="sm:col-span-2 flex items-center gap-3">
                     <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
                       Plan Active
                     </span>
                     {isEditing ? (
                       <button
-                        onClick={() =>
-                          setEditDraft((prev) => ({ ...prev, is_active: !prev.is_active }))
-                        }
+                        onClick={() => setEditDraft((prev) => ({ ...prev, is_active: !prev.is_active }))}
                         className={`w-10 h-5 rounded-full transition-all duration-200 relative ${
                           editDraft.is_active ? "bg-green-500" : "bg-muted"
                         }`}
@@ -291,7 +379,6 @@ export default function AdminPage() {
                     )}
                   </div>
 
-                  {/* Description */}
                   <div className="sm:col-span-2">
                     <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider block mb-1.5">
                       Description
@@ -308,7 +395,6 @@ export default function AdminPage() {
                     )}
                   </div>
 
-                  {/* Features */}
                   <div className="sm:col-span-2">
                     <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider block mb-1.5">
                       Features (one per line)
@@ -346,20 +432,18 @@ export default function AdminPage() {
           })}
         </div>
 
-        {/* Live App Link */}
+        {/* ── Live App / Switch to Active ── */}
         <div className="mt-10 glass-panel rounded-2xl p-6 border border-primary/20">
           <div className="font-semibold text-foreground mb-2">📡 Switch to Active / Share Link</div>
           <p className="text-sm text-muted-foreground mb-4">
-            This is the live URL of your Colossal AI platform. Share it with others to let them sign up and pay.
+            This is the live URL of your Colossal AI platform. Share it to let others sign up and pay.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1 bg-secondary border border-border rounded-xl px-4 py-3 text-sm font-mono text-muted-foreground overflow-x-auto">
               {window.location.origin}
             </div>
             <button
-              onClick={() => {
-                window.open(window.location.origin, "_blank");
-              }}
+              onClick={() => window.open(window.location.origin, "_blank")}
               className="px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-all glow-cyan flex-shrink-0"
             >
               ⚡ Switch to Active
@@ -367,7 +451,7 @@ export default function AdminPage() {
             <button
               onClick={() => {
                 navigator.clipboard.writeText(window.location.origin);
-                toast.success("Link copied to clipboard!");
+                toast.success("Link copied!");
               }}
               className="px-4 py-3 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all flex-shrink-0"
             >
@@ -379,8 +463,6 @@ export default function AdminPage() {
     </div>
   );
 }
-
-// ── Field component ────────────────────────────────────────────────────────────
 
 interface FieldProps {
   label: string;
@@ -413,7 +495,9 @@ function Field({ label, editing, value, onChange, type = "text", prefix, suffix,
         </div>
       ) : (
         <div className="text-sm text-foreground font-mono">
-          {prefix}{value}{suffix}
+          {prefix}
+          {value}
+          {suffix}
         </div>
       )}
     </div>
