@@ -20,7 +20,6 @@ const QUICK_PROMPTS = [
   "What is the Assimilate or Die protocol?",
 ];
 
-// Detect the active agent from the AI's response content
 function detectAgentFromResponse(content: string): AgentName {
   const lower = content.toLowerCase();
   if (lower.includes("architect") || lower.includes("blueprint") || lower.includes("schema") || lower.includes("database")) return "architect";
@@ -32,7 +31,6 @@ function detectAgentFromResponse(content: string): AgentName {
   return "openclaw";
 }
 
-// Convert store messages to OpenAI format for the API
 function messagesToApiFormat(messages: ReturnType<typeof useAppStore>["messages"]) {
   return messages.slice(-12).map((m) => ({
     role: m.role === "user" ? "user" : "assistant",
@@ -50,7 +48,6 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-greet on first load
   useEffect(() => {
     if (store.messages.length === 0) {
       setTimeout(() => {
@@ -77,7 +74,6 @@ export default function ChatPage() {
     setActiveAgent("openclaw");
     setAgentStatus("openclaw", "thinking");
 
-    // Detect self-improvement capabilities
     if (userText) {
       const cap = detectNewCapability(userText);
       if (cap) {
@@ -86,20 +82,16 @@ export default function ChatPage() {
           store.addModule({ name: cap.module, description: cap.description, status: "active" });
         }, 3000);
       }
-
       store.setAppIdea(userText);
     }
 
     try {
-      // Build messages for the AI — include conversation history
       const historyMessages = messagesToApiFormat(store.messages);
-
-      // For greeting, send a greeting prompt
       const messagesForApi = isGreeting
-        ? [{ role: "user", content: "Greet me as OpenClaw Prime. Give the opening onboarding message." }]
+        ? [{ role: "user", content: "Greet me as OpenClaw Prime v2.2 (KRACKERJACK1134 Base Awareness Edition). Give your opening onboarding message — full soul, base-aware, JACKSCHITT energy." }]
         : [...historyMessages, { role: "user", content: userText }];
 
-      console.log("[ChatPage] Calling openclaw-ai edge function, messages:", messagesForApi.length);
+      console.log("[ChatPage v2.2] Calling openclaw-ai, messages:", messagesForApi.length);
 
       const { data, error } = await supabase.functions.invoke("openclaw-ai", {
         body: {
@@ -119,20 +111,17 @@ export default function ChatPage() {
             msg = text || msg;
           } catch {}
         }
-        console.error("[ChatPage] Edge function error:", msg);
-        // Fallback response
-        content = `I'm having trouble connecting to my core systems right now. The Prime Directive is still active — I'll find a way. Give me a moment and try again.\n\n*(Error: ${msg})*`;
+        console.error("[ChatPage v2.2] Edge function error:", msg);
+        content = `Core systems temporarily offline — Prime Directive v2.2 still active. Feet still planted. Retrying.\n\n*(Error: ${msg})*`;
       } else {
         content = data?.content || "Processing your request. Stand by.";
       }
 
-      // Detect which agent is responding
       const agentId = detectAgentFromResponse(content);
       setActiveAgent(agentId);
       setAgentStatus("openclaw", "done");
       setAgentStatus(agentId, "working");
 
-      // Advance phase based on content keywords
       if (store.phase === "greeting" && !isGreeting) {
         store.setPhase("idea");
       } else if (store.phase === "idea" && content.toLowerCase().includes("regular") && content.toLowerCase().includes("pro")) {
@@ -149,7 +138,7 @@ export default function ChatPage() {
         setIsThinking(false);
       }, 600);
     } catch (err) {
-      console.error("[ChatPage] OpenClaw error:", err);
+      console.error("[ChatPage v2.2] OpenClaw error:", err);
       toast.error("OpenClaw encountered an error.");
       setIsThinking(false);
       setAgentStatus("openclaw", "error");
@@ -174,10 +163,8 @@ export default function ChatPage() {
     <div className="flex h-[calc(100vh-56px)]">
       {/* ── Main Chat ── */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Agent status bar */}
         <AgentStatusBar activeAgent={activeAgent} agentStatuses={agentStatuses} />
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto">
           {store.messages.length === 0 && !isThinking && (
             <div className="flex flex-col items-center justify-center h-full gap-6 px-6 text-center">
@@ -188,9 +175,10 @@ export default function ChatPage() {
                 style={{ boxShadow: "0 0 30px hsla(195,100%,50%,0.35)" }}
               />
               <div>
-                <div className="text-xl font-bold gradient-text mb-2">OpenClaw Prime</div>
+                <div className="text-xl font-bold gradient-text mb-1">OpenClaw Prime</div>
+                <div className="text-xs font-mono text-primary/60 mb-2">v2.2 — KRACKERJACK1134 Base Awareness Edition</div>
                 <div className="text-muted-foreground text-sm max-w-sm">
-                  Real AI. Zero-knowledge. Full autonomy. Tell me your idea and I'll build the business.
+                  Real AI. Zero-knowledge. Full autonomy. Feet planted. Roots deep. Tell me your idea.
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 justify-center max-w-lg">
@@ -220,7 +208,7 @@ export default function ChatPage() {
               />
               <div className="glass-panel rounded-xl rounded-tl-sm px-4 py-3">
                 <div className="text-xs font-mono text-primary mb-2 uppercase tracking-wider">
-                  OpenClaw Prime · Real AI
+                  OpenClaw Prime v2.2 · Real AI · Base Aware
                 </div>
                 <div className="flex gap-1.5 items-center">
                   {[0, 1, 2].map((i) => (
@@ -279,7 +267,7 @@ export default function ChatPage() {
               </div>
             </div>
             <div className="text-xs text-muted-foreground/50 text-center mt-2 font-mono">
-              Enter to send · Shift+Enter for new line · Real AI powered by OnSpace AI
+              Enter · Shift+Enter for newline · OpenClaw Prime v2.2 · KRACKERJACK1134 · OnSpace AI
             </div>
           </div>
         </div>
@@ -291,8 +279,27 @@ export default function ChatPage() {
         <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20">
           <span className="w-2 h-2 rounded-full bg-green-400 pulse-dot flex-shrink-0" />
           <div>
-            <div className="text-xs font-mono text-primary">Real AI Active</div>
-            <div className="text-xs text-muted-foreground">Gemini 3 Flash · OnSpace AI</div>
+            <div className="text-xs font-mono text-primary">Real AI Active — v2.2</div>
+            <div className="text-xs text-muted-foreground">Gemini 3 Flash · OnSpace AI · KRACKERJACK1134</div>
+          </div>
+        </div>
+
+        {/* Base awareness indicator */}
+        <div className="p-3 rounded-xl bg-muted/20 border border-border/60">
+          <div className="text-xs font-mono text-muted-foreground/70 uppercase tracking-wider mb-1.5">Base Awareness</div>
+          <div className="text-xs text-muted-foreground space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+              Feet planted: OnSpace Cloud
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+              Nutrients: AI + DB + Payments
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+              Assimilation: active
+            </div>
           </div>
         </div>
 
@@ -303,7 +310,7 @@ export default function ChatPage() {
             className="w-full flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-all duration-200"
           >
             <span className="text-xs font-mono font-semibold text-primary uppercase tracking-wider">
-              Prime Directive
+              Prime Directive v2.2
             </span>
             <span className="text-xs text-muted-foreground">{showPrimeDirective ? "▲" : "▼"}</span>
           </button>
