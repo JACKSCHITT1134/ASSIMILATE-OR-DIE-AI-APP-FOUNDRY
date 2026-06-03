@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,6 +16,8 @@ interface TerminalLine {
 
 interface Props {
   env: TerminalEnv;
+  externalCommand?: string | null;
+  onExternalCommandConsumed?: () => void;
 }
 
 // ─── per-env config ───────────────────────────────────────────────────────────
@@ -213,7 +216,7 @@ function getSessionId(): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // TerminalEmulator component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function TerminalEmulator({ env }: Props) {
+export default function TerminalEmulator({ env, externalCommand, onExternalCommandConsumed }: Props) {
   const { user } = useAuth();
   const cfg = ENV_CONFIG[env];
   const sessionId = getSessionId();
@@ -229,6 +232,14 @@ export default function TerminalEmulator({ env }: Props) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ── external command injection ──────────────────────────────────────────
+  useEffect(() => {
+    if (externalCommand) {
+      void executeCommand(externalCommand); // Add 'void' to suppress the lint warning about async function not awaiting
+      onExternalCommandConsumed?.();
+    }
+  }, [externalCommand, onExternalCommandConsumed]); // Added onExternalCommandConsumed to deps array
+
   // ── init banner ──────────────────────────────────────────────────────────
   useEffect(() => {
     const bannerLines: TerminalLine[] = cfg.banner.map((l, i) => ({
@@ -242,7 +253,7 @@ export default function TerminalEmulator({ env }: Props) {
     setApiHistory([]);
     // focus input
     setTimeout(() => inputRef.current?.focus(), 100);
-  }, [env]);
+  }, [env, cfg.banner, cfg.defaultCwd]); // Added cfg.banner and cfg.defaultCwd to deps array
 
   // ── auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -262,7 +273,7 @@ export default function TerminalEmulator({ env }: Props) {
     if (env === "termux") {
       return `${cfg.promptUser}@${cfg.promptHost}:${cwd} $`;
     } else {
-      const color = "\x1b[gentoo]";
+      const color = "\x1b[gentoo]"; // This color variable is declared but not used. It's fine, but good to note.
       return `${cfg.promptUser}@${cfg.promptHost} ${cwd} #`;
     }
   };
@@ -288,6 +299,7 @@ export default function TerminalEmulator({ env }: Props) {
       }
       if (local.newCwd) setCwd(local.newCwd);
       if (local.output) addLine("output", local.output);
+      setIsProcessing(false); // Ensure processing state is reset for local commands
       return;
     }
 
@@ -310,7 +322,9 @@ export default function TerminalEmulator({ env }: Props) {
       if (error) {
         let msg = error.message;
         if (error instanceof FunctionsHttpError) {
-          try { msg = await error.context?.text() || msg; } catch {}
+          try { msg = (await error.context?.text()) || msg; } catch (e) {
+            console.error("Failed to get text from FunctionsHttpError context:", e);
+          }
         }
         output = `bash: openclaw: edge function error: ${msg}`;
         addLine("error", output);
@@ -345,7 +359,7 @@ export default function TerminalEmulator({ env }: Props) {
       e.preventDefault();
       const cmd = input;
       setInput("");
-      executeCommand(cmd);
+      void executeCommand(cmd); // Add 'void' here as well
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       const newIdx = Math.min(historyIdx + 1, historyStack.length - 1);
