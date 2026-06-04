@@ -13,6 +13,8 @@ const NAV_LINKS = [
   { href: "/legal", label: "Legal", icon: "⚖️" },
 ];
 
+// Builder is accessible via Terminal page sidebar — no separate route needed
+
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
