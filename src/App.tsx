@@ -15,6 +15,7 @@ import AccountPage from "@/pages/AccountPage";
 import AssimilatePage from "@/pages/AssimilatePage";
 import ShareablePage from "@/pages/ShareablePage";
 import TerminalPage from "@/pages/TerminalPage";
+import SubAppsPage from "@/pages/SubAppsPage";
 import Navbar from "@/components/layout/Navbar";
 
 // Pages that use the Navbar layout
@@ -105,6 +106,14 @@ export default function App() {
             element={
               <WithNavbar>
                 <TerminalPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/apps"
+            element={
+              <WithNavbar>
+                <SubAppsPage />
               </WithNavbar>
             }
           />

@@ -5,6 +5,9 @@ import FileBrowserSidebar from "@/components/features/FileBrowserSidebar";
 import BuildScriptLibrary from "@/components/features/BuildScriptLibrary";
 import AppBuilderPanel from "@/components/features/AppBuilderPanel";
 import OpenClawSkills from "@/components/features/OpenClawSkills";
+import CodeEditorPanel from "@/components/features/CodeEditorPanel";
+import AppDeploymentPanel from "@/components/features/AppDeploymentPanel";
+import CodeAgentChatPanel from "@/components/features/CodeAgentChatPanel";
 
 // ── Environment metadata ──────────────────────────────────────────────────────
 const ENV_META = {
@@ -59,13 +62,16 @@ const ENV_META = {
 } as const;
 
 // ── Sidebar panels ────────────────────────────────────────────────────────────
-type SidePanel = "pkg" | "files" | "scripts" | "builder" | "skills" | null;
+type SidePanel = "pkg" | "files" | "scripts" | "builder" | "skills" | "editor" | "deploy" | "chat" | null;
 
 const PANEL_TABS = [
   { id: "pkg" as SidePanel, icon: "📦", label: "Packages" },
   { id: "files" as SidePanel, icon: "📁", label: "Files" },
   { id: "scripts" as SidePanel, icon: "📜", label: "Scripts" },
   { id: "builder" as SidePanel, icon: "🏗️", label: "Builder" },
+  { id: "editor" as SidePanel, icon: "📝", label: "Editor" },
+  { id: "chat" as SidePanel, icon: "💬", label: "Chat" },
+  { id: "deploy" as SidePanel, icon: "🚀", label: "Deploy" },
   { id: "skills" as SidePanel, icon: "⚡", label: "Skills" },
 ];
 
@@ -78,6 +84,7 @@ export default function TerminalPage() {
   const [activePanel, setActivePanel] = useState<SidePanel>("pkg");
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const [generatedFiles, setGeneratedFiles] = useState<Array<{ path: string; code: string }>>([]);
+  const [chatFiles, setChatFiles] = useState<Array<{ path: string; code: string }>>([]);
 
   const terminalRef = useRef<{ executeCommand: (cmd: string) => void } | null>(null);
 
@@ -100,6 +107,16 @@ export default function TerminalPage() {
 
   const handleFilesGenerated = useCallback((files: Array<{ path: string; code: string }>) => {
     setGeneratedFiles(files);
+    setChatFiles(files); // Sync to chat panel
+  }, []);
+
+  const handleChatFilesUpdated = useCallback((files: Array<{ path: string; code: string }>) => {
+    setGeneratedFiles((prev) => {
+      const map = new Map(prev.map((f) => [f.path, f]));
+      files.forEach((f) => map.set(f.path, f));
+      return Array.from(map.values());
+    });
+    setChatFiles(files);
   }, []);
 
   const handleOpenFile = useCallback((path: string, content: string) => {
@@ -340,6 +357,28 @@ export default function TerminalPage() {
             )}
             {activePanel === "skills" && (
               <OpenClawSkills env={activeEnv} onRunCommand={handleCommand} />
+            )}
+            {activePanel === "editor" && (
+              <CodeEditorPanel
+                env={activeEnv}
+                onRunCommand={handleCommand}
+                initialFiles={generatedFiles.length > 0 ? generatedFiles : undefined}
+              />
+            )}
+            {activePanel === "deploy" && (
+              <AppDeploymentPanel
+                env={activeEnv}
+                generatedFiles={generatedFiles}
+                onRunCommand={handleCommand}
+              />
+            )}
+            {activePanel === "chat" && (
+              <CodeAgentChatPanel
+                env={activeEnv}
+                onRunCommand={handleCommand}
+                activeFiles={chatFiles.length > 0 ? chatFiles : generatedFiles}
+                onFilesUpdated={handleChatFilesUpdated}
+              />
             )}
           </div>
         )}

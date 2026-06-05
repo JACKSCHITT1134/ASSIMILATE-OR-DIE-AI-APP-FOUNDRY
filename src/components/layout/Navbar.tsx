@@ -6,6 +6,7 @@ import openclawAvatar from "@/assets/openclaw-avatar.png";
 const NAV_LINKS = [
   { href: "/command", label: "Command", icon: "⚡" },
   { href: "/terminal", label: "Terminal", icon: "💻" },
+  { href: "/apps", label: "Sub-Apps", icon: "🏗️" },
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/assimilate", label: "Swarm", icon: "💀" },
   { href: "/pricing", label: "Pricing", icon: "💳" },
